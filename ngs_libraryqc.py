@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
-"""NGS_LibraryQC: anchor-based insert extraction and library representation counting."""
+"""NGS_LibraryQC: anchor-based insert extraction and library representation counting.
+
+Main use case:
+    python ngs_libraryqc.py --config configs/example_5utr_config.json
+
+Direct CLI use is also supported:
+    python ngs_libraryqc.py --fastq R1.fastq.gz R2.fastq.gz --left LEFT --right RIGHT --ref reference.csv
+"""
 
 from __future__ import annotations
 
 import argparse
 import gzip
+import json
 from collections import Counter
 from pathlib import Path
 from typing import Iterable, Optional, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from Bio import SeqIO
@@ -215,35 +224,17 @@ def run_counting(
     return insert_df, ref_df, nonref_df, summary
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Extract and count sequences between two anchors from FASTQ.")
-    parser.add_argument("--fastq", nargs="+", required=True, help="FASTQ/FASTQ.gz files")
-    parser.add_argument("--left", required=True, help="Left anchor sequence")
-    parser.add_argument("--right", required=True, help="Right anchor sequence")
-    parser.add_argument("--ref", default=None, help="Optional reference CSV")
-    parser.add_argument("--id-col", default="utr_id", help="Reference ID column")
-    parser.add_argument("--seq-col", default="utr_seq", help="Reference sequence column")
-    parser.add_argument("--orientation", choices=["both", "forward_only", "reverse_complement_only"], default="both")
-    parser.add_argument("--anchor-mismatch", type=int, default=0)
-    parser.add_argument("--min-len", type=int, default=0)
-    parser.add_argument("--max-len", type=int, default=10000)
-    parser.add_argument("--out-prefix", default="ngs_libraryqc")
-    args = parser.parse_args()
+def save_outputs(
+    insert_df: pd.DataFrame,
+    ref_df: Optional[pd.DataFrame],
+    nonref_df: pd.DataFrame,
+    summary: dict,
+    out_prefix: str,
+    make_plots: bool = True,
+) -> None:
+    prefix = Path(out_prefix)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
 
-    insert_df, ref_df, nonref_df, summary = run_counting(
-        fastq_paths=args.fastq,
-        left=args.left,
-        right=args.right,
-        ref_path=args.ref,
-        id_col=args.id_col,
-        seq_col=args.seq_col,
-        orientation=args.orientation,
-        anchor_mismatch=args.anchor_mismatch,
-        min_len=args.min_len,
-        max_len=args.max_len,
-    )
-
-    prefix = Path(args.out_prefix)
     insert_df.to_csv(f"{prefix}.insert_counts.csv", index=False)
     if ref_df is not None:
         ref_df.to_csv(f"{prefix}.reference_counts.csv", index=False)
@@ -252,6 +243,108 @@ def main() -> None:
     with open(f"{prefix}.summary.txt", "w") as handle:
         for key, value in summary.items():
             handle.write(f"{key}: {value}\n")
+
+    if make_plots:
+        plot_df = ref_df if ref_df is not None else insert_df.rename(columns={"count": "raw_count"})
+        count_col = "raw_count" if "raw_count" in plot_df.columns else "count"
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.hist(np.log10(plot_df[count_col] + 1), bins=50)
+        ax.set_xlabel("log10(count + 1)")
+        ax.set_ylabel("Number of sequences")
+        ax.set_title("Count distribution")
+        fig.tight_layout()
+        fig.savefig(f"{prefix}.count_distribution.png", dpi=200)
+        plt.close(fig)
+
+        ranked = plot_df.sort_values(count_col, ascending=False).reset_index(drop=True)
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.plot(np.arange(1, len(ranked) + 1), ranked[count_col].values)
+        ax.set_xlabel("Rank")
+        ax.set_ylabel("Raw count")
+        ax.set_title("Ranked abundance")
+        fig.tight_layout()
+        fig.savefig(f"{prefix}.ranked_abundance.png", dpi=200)
+        plt.close(fig)
+
+
+def load_config(path: str) -> dict:
+    with open(path, "r") as handle:
+        return json.load(handle)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Extract and count sequences between two anchors from FASTQ.")
+    parser.add_argument("--config", default=None, help="JSON config file. CLI arguments override config values when supplied.")
+    parser.add_argument("--fastq", nargs="+", help="FASTQ/FASTQ.gz files")
+    parser.add_argument("--left", help="Left anchor sequence")
+    parser.add_argument("--right", help="Right anchor sequence")
+    parser.add_argument("--ref", default=None, help="Optional reference CSV")
+    parser.add_argument("--id-col", default=None, help="Reference ID column")
+    parser.add_argument("--seq-col", default=None, help="Reference sequence column")
+    parser.add_argument("--orientation", choices=["both", "forward_only", "reverse_complement_only"], default=None)
+    parser.add_argument("--anchor-mismatch", type=int, default=None)
+    parser.add_argument("--min-len", type=int, default=None)
+    parser.add_argument("--max-len", type=int, default=None)
+    parser.add_argument("--out-prefix", default=None)
+    parser.add_argument("--no-plots", action="store_true", help="Disable PNG plot generation")
+    return parser
+
+
+def resolve_params(args: argparse.Namespace) -> dict:
+    cfg = load_config(args.config) if args.config else {}
+
+    def value(cli_name: str, cfg_name: str, default=None):
+        cli_value = getattr(args, cli_name)
+        return cli_value if cli_value is not None else cfg.get(cfg_name, default)
+
+    params = {
+        "fastq_paths": value("fastq", "fastq"),
+        "left": value("left", "left_anchor"),
+        "right": value("right", "right_anchor"),
+        "ref_path": value("ref", "reference_csv"),
+        "id_col": value("id_col", "id_col", "utr_id"),
+        "seq_col": value("seq_col", "seq_col", "utr_seq"),
+        "orientation": value("orientation", "orientation", "both"),
+        "anchor_mismatch": value("anchor_mismatch", "anchor_mismatch", 0),
+        "min_len": value("min_len", "min_len", 0),
+        "max_len": value("max_len", "max_len", 10000),
+        "out_prefix": value("out_prefix", "out_prefix", "results/ngs_libraryqc"),
+        "make_plots": not args.no_plots and bool(cfg.get("make_plots", True)),
+    }
+
+    missing = [k for k in ["fastq_paths", "left", "right"] if not params[k]]
+    if missing:
+        raise SystemExit(f"Missing required parameter(s): {', '.join(missing)}")
+
+    return params
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    params = resolve_params(args)
+
+    insert_df, ref_df, nonref_df, summary = run_counting(
+        fastq_paths=params["fastq_paths"],
+        left=params["left"],
+        right=params["right"],
+        ref_path=params["ref_path"],
+        id_col=params["id_col"],
+        seq_col=params["seq_col"],
+        orientation=params["orientation"],
+        anchor_mismatch=int(params["anchor_mismatch"]),
+        min_len=int(params["min_len"]),
+        max_len=int(params["max_len"]),
+    )
+
+    save_outputs(
+        insert_df=insert_df,
+        ref_df=ref_df,
+        nonref_df=nonref_df,
+        summary=summary,
+        out_prefix=params["out_prefix"],
+        make_plots=params["make_plots"],
+    )
 
     print("Done.")
     print(pd.Series(summary).to_string())
