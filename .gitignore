@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.log
+
+config.ini
+results/
+*_results/
+tests/synthetic/
+
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
