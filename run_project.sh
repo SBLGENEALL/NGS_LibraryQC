@@ -45,6 +45,17 @@ if [[ -n "${OPTION}" && "${OPTION}" != "--replace" ]]; then
     exit 2
 fi
 
+if ! command -v flock >/dev/null 2>&1; then
+    echo "Required command not found: flock" >&2
+    exit 2
+fi
+LOCK_FILE="${PROJECT_DIR}/config/.analysis.lock"
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+    echo "Another 1pct or full analysis is already running for this project." >&2
+    exit 2
+fi
+
 if [[ ! -f "${CONFIG}" ]]; then
     python3 "${SCRIPT_DIR}/project_tools/configure_project.py"
 fi
@@ -67,12 +78,13 @@ if [[ -e "${OUTDIR}" ]]; then
     fi
     ARCHIVE_DIR="${PROJECT_DIR}/../archive"
     mkdir -p "${ARCHIVE_DIR}"
-    BACKUP="${ARCHIVE_DIR}/previous_${MODE}_result"
-    if [[ -e "${BACKUP}" ]]; then
-        echo "Archive target already exists: ${BACKUP}" >&2
-        echo "Move or remove it before using --replace." >&2
-        exit 2
-    fi
+    BACKUP_BASE="${ARCHIVE_DIR}/previous_${MODE}_result"
+    BACKUP="${BACKUP_BASE}"
+    BACKUP_NUMBER=2
+    while [[ -e "${BACKUP}" ]]; do
+        BACKUP="${BACKUP_BASE}_${BACKUP_NUMBER}"
+        ((BACKUP_NUMBER += 1))
+    done
     mv -- "${OUTDIR}" "${BACKUP}"
     echo "Previous result moved to: ${BACKUP}"
 fi
