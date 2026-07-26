@@ -38,7 +38,7 @@ READ_TOKEN_RE = re.compile(
 )
 
 PIPELINE_NAME = "Amplicon Library QC"
-PIPELINE_VERSION = "1.2.0"
+PIPELINE_VERSION = "1.3"
 
 
 def normalize_dna(value: str, allow_n: bool = False) -> str:
@@ -1531,20 +1531,39 @@ def parse_sample_sheet(path: Optional[Path]) -> List[Dict[str, str]]:
         return []
     lines = path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
     data_start = 0
+    sectioned = False
     for i, line in enumerate(lines):
         if line.strip().lower() == "[data]":
             data_start = i + 1
+            sectioned = True
             break
-    data_lines = [line for line in lines[data_start:] if line.strip()]
+    data_lines = []
+    for line in lines[data_start:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if sectioned and stripped.startswith("[") and stripped.endswith("]"):
+            break
+        data_lines.append(line)
     if not data_lines:
         return []
     reader = csv.DictReader(data_lines)
     rows = []
     for row in reader:
-        normalized = {
-            (key or "").strip().lower(): (value or "").strip().upper()
-            for key, value in row.items()
-        }
+        normalized = {}
+        for key, value in row.items():
+            # csv.DictReader stores surplus fields under a None key and returns
+            # them as a list. Illumina SampleSheets frequently contain trailing
+            # commas, so ignore unnamed columns instead of calling strip() on a
+            # list and aborting after the main library outputs were written.
+            if key is None:
+                continue
+            if isinstance(value, list):
+                value = next(
+                    (str(item) for item in value if str(item).strip()),
+                    "",
+                )
+            normalized[key.strip().lower()] = str(value or "").strip().upper()
         sample = (
             normalized.get("sample_id")
             or normalized.get("sampleid")

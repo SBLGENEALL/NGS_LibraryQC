@@ -4,6 +4,9 @@ set -euo pipefail
 TEST_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PIPELINE_DIR="$(cd -- "${TEST_DIR}/.." && pwd)"
 
+cd "${PIPELINE_DIR}"
+python3 -m unittest tests/test_sample_sheet.py tests/test_project_tools.py
+
 python3 "${TEST_DIR}/make_synthetic_data.py"
 
 python3 "${PIPELINE_DIR}/amplicon_qc.py" \
@@ -71,3 +74,10 @@ assert {x.sequence for x in oligo_reference.unique} == {
 
 print("Synthetic integration test passed")
 PY
+
+if command -v Rscript >/dev/null 2>&1; then
+    Rscript "${PIPELINE_DIR}/scripts/plot_library_qc.R" \
+        "${TEST_DIR}/synthetic/results" \
+        "${TEST_DIR}/synthetic/results/figures"
+    test -f "${TEST_DIR}/synthetic/results/figures/01_coverage_classes.png"
+fi

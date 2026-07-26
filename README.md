@@ -5,12 +5,96 @@
 않고 promoter, enhancer, barcode, regulatory element, 짧은 CDS fragment 등
 reference-defined amplicon library에 재사용할 수 있습니다.
 
-**Current version: v1.2.0 (2026-07-24)**
+**Current version: v1.3 (2026-07-26)**
 
-v1.2.0은 v1.1.0의 reference-defined amplicon QC에 PhiX direct
-classification과 PhiX-adjusted index QC를 추가한 버전입니다.
+v1.3은 Illumina section형 SampleSheet의 surplus-column 오류를 수정하고,
+오프라인 워크스테이션의 복잡한 폴더를 자동 탐색·정리하며 1%/full 분석을
+한 명령으로 실행하도록 만든 버전입니다.
 
-## 폴더 구조
+버전은 두 자리만 사용합니다. 세부 수정은 `v1.3 → v1.4`, 큰 구조 변경은
+`v2.0 → v3.0`으로 진행합니다.
+
+## GitHub ZIP으로 설치하고 기존 폴더 정리
+
+GitHub에서 `v1.3` 브랜치의 ZIP을 내려받아 사내 워크스테이션의
+`/data/user/MCET03/03_NGS` 바로 아래에 풉니다. 압축을 풀면 일반적으로
+`NGS_LibraryQC-1.3` 폴더가 생깁니다.
+
+먼저 읽기 전용 자동 탐색을 실행합니다.
+
+```bash
+cd /data/user/MCET03/03_NGS
+bash NGS_LibraryQC-1.3/cleanup_project.sh
+```
+
+출력에는 다음 후보가 자동으로 표시됩니다.
+
+- 원본 FASTQ 그룹
+- 추출된 1% FASTQ 그룹
+- reference 후보
+- SampleSheet 및 index metadata 후보
+- 핵심 combined 파일이 존재하는 기존 분석 결과
+- 기존 figure/report
+
+파일명을 입력할 필요가 없습니다. 실제 정리를 시작하려면:
+
+```bash
+bash NGS_LibraryQC-1.3/cleanup_project.sh apply
+```
+
+각 후보를 보존할지 `yes` 또는 `no`로만 선택합니다. 최종 구조는 다음처럼
+번호 중복 없이 정리됩니다.
+
+```text
+/data/user/MCET03/03_NGS/
+└── 01_5UTR_Plasmid/
+    ├── raw_data/
+    ├── reference/
+    ├── subset_1pct/
+    ├── results/
+    ├── config/
+    └── pipeline/
+```
+
+`00_Tools`, `99_ProjectTemplate`, `create_ngs_project.sh`, 중복 pipeline과
+선택하지 않은 파일은 즉시 삭제하지 않고
+`/data/user/MCET03/03_NGS_cleanup_quarantine_<timestamp>`로 이동합니다.
+새 1% 분석이 `[7/7]`까지 완료된 뒤에만 다음 명령으로 각 quarantine을
+`yes/no` 확인 후 영구 삭제합니다.
+
+```bash
+bash /data/user/MCET03/03_NGS/01_5UTR_Plasmid/pipeline/purge_quarantine.sh
+```
+
+## 정리 후 분석 실행
+
+1% 분석:
+
+```bash
+bash /data/user/MCET03/03_NGS/01_5UTR_Plasmid/pipeline/run_project.sh 1pct
+```
+
+최초 실행에서는 자동으로 reference와 SampleSheet 후보를 보여주며,
+역시 `yes/no`로만 선택합니다. 실행이 끝나면 다음을 자동으로 수행합니다.
+
+- `[7/7]` 완료 검증
+- Python 표준 라이브러리 기반 실제 시간과 peak memory 기록
+- 결과 폴더 크기 기록 및 full FASTQ 대비 전체 실행시간·공간 추정
+- R이 설치되어 있으면 coverage class, rank-abundance, count distribution,
+  length/GC plot 생성
+
+1% 결과를 확인한 뒤 전체 분석:
+
+```bash
+bash /data/user/MCET03/03_NGS/01_5UTR_Plasmid/pipeline/run_project.sh full
+```
+
+분석 날짜는 실행한 날짜를 사용하며 결과는
+`results/YYYYMMDD_1pct_v1.3` 또는 `results/YYYYMMDD_full_v1.3`에 저장됩니다.
+같은 날 다시 실행하면 `_rerun2`, `_rerun3`이 자동으로 붙어 기존 결과를
+덮어쓰지 않습니다.
+
+## 저장소 폴더 구조
 
 ```text
 .
