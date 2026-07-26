@@ -71,7 +71,6 @@ def reference_columns(path: Path):
                 "utrsequence",
                 "5utrsequence",
                 "5utrcandidatesequence",
-                "5utrcadidatesequence",
                 "targetsequence",
                 "sequence",
                 "seq",
@@ -128,10 +127,10 @@ def main() -> int:
 target_name = 5UTR
 
 [input]
-# run_project.sh overrides input_dir and outdir for 1pct/full runs.
-input_dir = ../subset_1pct
+# run.sh overrides input_dir and outdir for 1pct/full runs.
+input_dir = ../raw_data/1pct
 reference = {relative_to_config(reference, config_dir)}
-outdir = ../results/configured_output
+outdir = ../results/1pct
 sample_sheet = {sample_value}
 top_unknown = {unknown_value}
 

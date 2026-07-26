@@ -38,7 +38,6 @@ READ_TOKEN_RE = re.compile(
 )
 
 PIPELINE_NAME = "Amplicon Library QC"
-PIPELINE_VERSION = "1.3"
 
 
 def normalize_dna(value: str, allow_n: bool = False) -> str:
@@ -235,7 +234,6 @@ def resolve_reference_columns(
             "utrsequence",
             "5utrsequence",
             "5utrcandidatesequence",
-            "5utrcadidatesequence",
             "targetsequence",
             "sequence",
             "seq",
@@ -991,9 +989,21 @@ class ObservedSequenceStore:
 
     def close_and_export(self) -> None:
         self.flush()
-        with gzip.open(self.output_path, "wt", encoding="utf-8") as out:
-            out.write(
-                "sample\tdesign_key\tobserved_target_sequence\tmatch_type\tcount\n"
+        with gzip.open(
+            self.output_path,
+            "wt",
+            encoding="utf-8",
+            newline="",
+        ) as out:
+            writer = csv.writer(out, lineterminator="\n")
+            writer.writerow(
+                [
+                    "sample",
+                    "design_key",
+                    "observed_target_sequence",
+                    "match_type",
+                    "count",
+                ]
             )
             query = """
                 SELECT sample, design_key, observed_sequence, match_type, count
@@ -1001,7 +1011,7 @@ class ObservedSequenceStore:
                 ORDER BY sample, count DESC, design_key, observed_sequence
             """
             for row in self.connection.execute(query):
-                out.write("\t".join(map(str, row)) + "\n")
+                writer.writerow(row)
         self.connection.close()
         self.db_path.unlink(missing_ok=True)
 
@@ -1287,13 +1297,13 @@ def calculate_library_metrics(
     }
 
 
-def write_tsv(path: Path, fieldnames: Sequence[str], rows: Iterable[Dict[str, object]]) -> None:
+def write_csv(path: Path, fieldnames: Sequence[str], rows: Iterable[Dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
             handle,
             fieldnames=fieldnames,
-            delimiter="\t",
+            delimiter=",",
             extrasaction="ignore",
             lineterminator="\n",
         )
@@ -1406,8 +1416,8 @@ def write_sample_outputs(
         "anchor_missing_reads",
         "unassigned_reads",
     ]
-    write_tsv(
-        sample_dir / f"{safe_name(result.sample)}_library_metrics.tsv",
+    write_csv(
+        sample_dir / f"{safe_name(result.sample)}_library_metrics.csv",
         ["metric", "value"],
         [{"metric": key, "value": metrics.get(key)} for key in metric_order],
     )
@@ -1446,26 +1456,26 @@ def write_sample_outputs(
         "reads_per_million",
         "detected",
     ]
-    write_tsv(
-        sample_dir / f"{safe_name(result.sample)}_variant_counts.tsv",
+    write_csv(
+        sample_dir / f"{safe_name(result.sample)}_variant_counts.csv",
         fields,
         variant_rows,
     )
-    write_tsv(
-        sample_dir / f"{safe_name(result.sample)}_dropout_variants.tsv",
+    write_csv(
+        sample_dir / f"{safe_name(result.sample)}_dropout_variants.csv",
         fields,
         (row for row in variant_rows if row["total_count"] == 0),
     )
-    write_tsv(
-        sample_dir / f"{safe_name(result.sample)}_top_variants.tsv",
+    write_csv(
+        sample_dir / f"{safe_name(result.sample)}_top_variants.csv",
         fields,
         sorted(
             variant_rows,
             key=lambda x: (-int(x["total_count"]), str(x["sequence_key"])),
         )[:100],
     )
-    write_tsv(
-        sample_dir / f"{safe_name(result.sample)}_classification.tsv",
+    write_csv(
+        sample_dir / f"{safe_name(result.sample)}_classification.csv",
         ["category", "count", "percent"],
         [
             {
@@ -1554,13 +1564,13 @@ def write_cross_sample_matrices(
             )
         count_rows.append(count_row)
         rpm_rows.append(rpm_row)
-    write_tsv(
-        combined_dir / "variant_count_matrix.tsv",
+    write_csv(
+        combined_dir / "variant_count_matrix.csv",
         count_fields,
         count_rows,
     )
-    write_tsv(
-        combined_dir / "variant_rpm_matrix.tsv",
+    write_csv(
+        combined_dir / "variant_rpm_matrix.csv",
         count_fields,
         rpm_rows,
     )
@@ -1724,8 +1734,8 @@ def run_index_qc(
         source.append(
             {"barcode": barcode, "count": count, "source": "Top_Unknown_Barcodes"}
         )
-    write_tsv(
-        index_dir / "top_observed_barcodes.tsv",
+    write_csv(
+        index_dir / "top_observed_barcodes.csv",
         ["barcode", "count", "source"],
         sorted(source, key=lambda x: (-int(x["count"]), str(x["barcode"])))[:5000],
     )
@@ -1813,8 +1823,8 @@ def run_index_qc(
                 }
             )
 
-    write_tsv(
-        index_dir / "nearest_expected_barcodes.tsv",
+    write_csv(
+        index_dir / "nearest_expected_barcodes.csv",
         [
             "observed_barcode",
             "count",
@@ -1826,8 +1836,8 @@ def run_index_qc(
         ],
         sorted(nearest_rows, key=lambda x: (-int(x["count"]), str(x["observed_barcode"]))),
     )
-    write_tsv(
-        index_dir / "index_position_substitutions.tsv",
+    write_csv(
+        index_dir / "index_position_substitutions.csv",
         ["index_read", "position", "expected_base", "observed_base", "weighted_reads"],
         [
             {
@@ -1895,8 +1905,8 @@ def run_index_qc(
         ),
         "note": note,
     }
-    write_tsv(
-        index_dir / "index_summary.tsv",
+    write_csv(
+        index_dir / "index_summary.csv",
         ["metric", "value"],
         [{"metric": key, "value": value} for key, value in summary.items()],
     )
@@ -1924,7 +1934,7 @@ def write_qc_outputs(
         "n_base_percent",
         "reads_with_n_percent",
     ]
-    write_tsv(outdir / "run_qc_summary.tsv", fields, summary_rows)
+    write_csv(outdir / "run_qc_summary.csv", fields, summary_rows)
     cycle_rows = []
     for metric in metrics:
         for i, cycle in enumerate(metric.cycles, 1):
@@ -1941,8 +1951,8 @@ def write_qc_outputs(
             for base in "ACGTN":
                 row[f"{base}_percent"] = pct(cycle.bases.get(base, 0), cycle.total)
             cycle_rows.append(row)
-    write_tsv(
-        outdir / "per_cycle_qc.tsv",
+    write_csv(
+        outdir / "per_cycle_qc.csv",
         [
             "label",
             "sample",
@@ -2273,15 +2283,15 @@ def create_share_summary(
             "",
             "[FILES TO CHECK]",
             "report.html",
-            "run_qc_summary.tsv",
-            "per_cycle_qc.tsv",
-            "index_qc/index_summary.tsv",
-            "index_qc/index_position_substitutions.tsv",
-            "combined/ALL_ASSIGNED_variant_counts.tsv",
-            "combined/ALL_WITH_UNDETERMINED_variant_counts.tsv",
-            "combined/all_sample_metrics.tsv",
-            "combined/variant_count_matrix.tsv",
-            "combined/variant_rpm_matrix.tsv",
+            "run_qc_summary.csv",
+            "per_cycle_qc.csv",
+            "index_qc/index_summary.csv",
+            "index_qc/index_position_substitutions.csv",
+            "combined/ALL_ASSIGNED_variant_counts.csv",
+            "combined/ALL_WITH_UNDETERMINED_variant_counts.csv",
+            "combined/all_sample_metrics.csv",
+            "combined/variant_count_matrix.csv",
+            "combined/variant_rpm_matrix.csv",
         ]
     )
     (outdir / "RESULTS_TO_SHARE.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -2516,8 +2526,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "id_count": len(ids),
             }
         )
-    write_tsv(
-        args.outdir / "design_sequence_duplicates.tsv",
+    write_csv(
+        args.outdir / "design_sequence_duplicates.csv",
         ["target_sequence", "variant_ids", "id_count"],
         duplicate_rows,
     )
@@ -2553,7 +2563,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         else None
     )
     observed_store = (
-        ObservedSequenceStore(args.outdir / "observed_target_sequences.tsv.gz")
+        ObservedSequenceStore(args.outdir / "observed_target_sequences.csv.gz")
         if args.write_observed_sequences
         else None
     )
@@ -2630,22 +2640,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         combined_metrics_rows.append(metrics)
         source_dir = args.outdir / "samples" / safe_name(combined.sample)
         for suffix in (
-            "library_metrics.tsv",
-            "variant_counts.tsv",
-            "dropout_variants.tsv",
-            "top_variants.tsv",
-            "classification.tsv",
+            "library_metrics.csv",
+            "variant_counts.csv",
+            "dropout_variants.csv",
+            "top_variants.csv",
+            "classification.csv",
         ):
             source = source_dir / f"{safe_name(combined.sample)}_{suffix}"
             shutil.copy2(source, combined_dir / source.name)
-    write_tsv(
-        combined_dir / "combined_metrics.tsv",
+    write_csv(
+        combined_dir / "combined_metrics.csv",
         sorted({key for row in combined_metrics_rows for key in row}),
         combined_metrics_rows,
     )
     all_metric_rows = list(sample_metrics.values())
-    write_tsv(
-        combined_dir / "all_sample_metrics.tsv",
+    write_csv(
+        combined_dir / "all_sample_metrics.csv",
         sorted({key for row in all_metric_rows for key in row}),
         all_metric_rows,
     )
@@ -2718,7 +2728,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     manifest = {
         "pipeline": "amplicon_library_qc",
-        "version": PIPELINE_VERSION,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "runtime_seconds": round(time.time() - started, 3),
         "python": sys.version,

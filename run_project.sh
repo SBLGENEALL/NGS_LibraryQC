@@ -4,11 +4,44 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 MODE="${1:-}"
+OPTION="${2:-}"
 CONFIG="${PROJECT_DIR}/config/libraryqc.ini"
-VERSION="$(tr -d '[:space:]' < "${SCRIPT_DIR}/VERSION")"
+
+usage() {
+    echo "Usage:" >&2
+    echo "  bash scripts/run.sh plot" >&2
+    echo "  bash scripts/run.sh 1pct [--replace]" >&2
+    echo "  bash scripts/run.sh full [--replace]" >&2
+}
+
+plot_result() {
+    local result_dir="$1"
+    if [[ ! -d "${result_dir}" ]]; then
+        echo "Result folder not found: ${result_dir}" >&2
+        exit 2
+    fi
+    if ! command -v Rscript >/dev/null 2>&1; then
+        echo "Rscript is required to create the figures." >&2
+        exit 2
+    fi
+    Rscript \
+        "${SCRIPT_DIR}/plot_library_qc.R" \
+        "${result_dir}" \
+        "${result_dir}/figures"
+    echo "Figures: ${result_dir}/figures"
+}
+
+if [[ "${MODE}" == "plot" ]]; then
+    plot_result "${PROJECT_DIR}/results/1pct"
+    exit 0
+fi
 
 if [[ "${MODE}" != "1pct" && "${MODE}" != "full" ]]; then
-    echo "Usage: bash pipeline/run_project.sh 1pct|full" >&2
+    usage
+    exit 2
+fi
+if [[ -n "${OPTION}" && "${OPTION}" != "--replace" ]]; then
+    usage
     exit 2
 fi
 
@@ -16,31 +49,38 @@ if [[ ! -f "${CONFIG}" ]]; then
     python3 "${SCRIPT_DIR}/project_tools/configure_project.py"
 fi
 
-if [[ "${MODE}" == "1pct" ]]; then
-    INPUT_DIR="${PROJECT_DIR}/subset_1pct"
-else
-    INPUT_DIR="${PROJECT_DIR}/raw_data"
-fi
+INPUT_DIR="${PROJECT_DIR}/raw_data/${MODE}"
+OUTDIR="${PROJECT_DIR}/results/${MODE}"
 
-if ! find "${INPUT_DIR}" -type f \( -iname '*.fastq' -o -iname '*.fastq.gz' -o -iname '*.fq' -o -iname '*.fq.gz' \) -print -quit | grep -q .; then
+if ! find "${INPUT_DIR}" -type f \
+    \( -iname '*.fastq' -o -iname '*.fastq.gz' -o -iname '*.fq' -o -iname '*.fq.gz' \) \
+    -print -quit | grep -q .; then
     echo "No FASTQ files found under: ${INPUT_DIR}" >&2
     exit 2
 fi
 
-DATE="$(date +%Y%m%d)"
-BASE_OUT="${PROJECT_DIR}/results/${DATE}_${MODE}"
-OUTDIR="${BASE_OUT}"
-RERUN=2
-while [[ -e "${OUTDIR}" ]]; do
-    OUTDIR="${BASE_OUT}_run${RERUN}"
-    ((RERUN += 1))
-done
+if [[ -e "${OUTDIR}" ]]; then
+    if [[ "${OPTION}" != "--replace" ]]; then
+        echo "Result already exists: ${OUTDIR}" >&2
+        echo "Use 'plot' to redraw it, or add --replace to rerun the analysis." >&2
+        exit 2
+    fi
+    ARCHIVE_DIR="${PROJECT_DIR}/../archive"
+    mkdir -p "${ARCHIVE_DIR}"
+    BACKUP="${ARCHIVE_DIR}/previous_${MODE}_result"
+    if [[ -e "${BACKUP}" ]]; then
+        echo "Archive target already exists: ${BACKUP}" >&2
+        echo "Move or remove it before using --replace." >&2
+        exit 2
+    fi
+    mv -- "${OUTDIR}" "${BACKUP}"
+    echo "Previous result moved to: ${BACKUP}"
+fi
 
 TMPDIR_RUN="$(mktemp -d)"
 trap 'rm -rf -- "${TMPDIR_RUN}"' EXIT
 
 echo "Mode: ${MODE}"
-echo "Pipeline version: ${VERSION}"
 echo "Input: ${INPUT_DIR}"
 echo "Output: ${OUTDIR}"
 echo
@@ -75,20 +115,7 @@ if ! grep -Fq '[7/7] Creating HTML and shareable summary' "${OUTDIR}/run.log" ||
     exit 1
 fi
 
-if command -v Rscript >/dev/null 2>&1; then
-    Rscript "${SCRIPT_DIR}/scripts/plot_library_qc.R" "${OUTDIR}" "${OUTDIR}/figures" \
-        2>&1 | tee -a "${OUTDIR}/run.log"
-else
-    echo "Rscript was not found; R figures were skipped." | tee -a "${OUTDIR}/run.log"
-fi
-
-if [[ "${MODE}" == "1pct" ]] &&
-   find "${PROJECT_DIR}/raw_data" -type f \( -iname '*.fastq' -o -iname '*.fastq.gz' -o -iname '*.fq' -o -iname '*.fq.gz' \) -print -quit | grep -q .; then
-    python3 "${SCRIPT_DIR}/project_tools/estimate_full_run.py" \
-        "${OUTDIR}" "${PROJECT_DIR}/subset_1pct" "${PROJECT_DIR}/raw_data" \
-        | tee -a "${OUTDIR}/run.log"
-fi
+plot_result "${OUTDIR}" 2>&1 | tee -a "${OUTDIR}/run.log"
 
 echo
 echo "Completed [7/7]: ${OUTDIR}"
-echo "Keep the cleanup quarantine until this result has been reviewed."
