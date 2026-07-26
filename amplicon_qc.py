@@ -208,6 +208,49 @@ class ReferenceLibrary:
     source_rows: int
 
 
+def normalize_column_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.strip().lower())
+
+
+def resolve_reference_columns(
+    fieldnames: Sequence[str],
+    id_column: str,
+    sequence_column: str,
+) -> Tuple[str, str]:
+    lookup = {normalize_column_name(name): name for name in fieldnames if name}
+
+    def resolve(requested: str, aliases: Sequence[str]) -> Optional[str]:
+        direct = lookup.get(normalize_column_name(requested))
+        if direct is not None:
+            return direct
+        return next((lookup[key] for key in aliases if key in lookup), None)
+
+    actual_id = resolve(
+        id_column,
+        ("variantid", "sequenceid", "designid", "id", "name"),
+    )
+    actual_seq = resolve(
+        sequence_column,
+        (
+            "utrsequence",
+            "5utrsequence",
+            "5utrcandidatesequence",
+            "5utrcadidatesequence",
+            "targetsequence",
+            "sequence",
+            "seq",
+            "finaloligo",
+        ),
+    )
+    if actual_id is None or actual_seq is None:
+        raise ValueError(
+            "reference columns not found. "
+            f"Requested ID={id_column!r}, sequence={sequence_column!r}. "
+            f"Available columns: {', '.join(fieldnames)}"
+        )
+    return actual_id, actual_seq
+
+
 def read_reference(
     path: Path,
     id_column: str,
@@ -246,14 +289,11 @@ def read_reference(
             reader = csv.DictReader(handle, dialect=dialect)
             if not reader.fieldnames:
                 raise ValueError("reference table has no header")
-            normalized_headers = {x.strip().lower(): x for x in reader.fieldnames}
-            actual_id = normalized_headers.get(id_column.strip().lower())
-            actual_seq = normalized_headers.get(sequence_column.strip().lower())
-            if actual_id is None or actual_seq is None:
-                raise ValueError(
-                    "reference columns not found. "
-                    f"Available columns: {', '.join(reader.fieldnames)}"
-                )
+            actual_id, actual_seq = resolve_reference_columns(
+                reader.fieldnames,
+                id_column,
+                sequence_column,
+            )
             for line_number, row in enumerate(reader, 2):
                 variant_id = (row.get(actual_id) or "").strip()
                 raw_seq = (row.get(actual_seq) or "").strip()

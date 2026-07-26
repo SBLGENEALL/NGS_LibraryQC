@@ -28,11 +28,11 @@ if ! find "${INPUT_DIR}" -type f \( -iname '*.fastq' -o -iname '*.fastq.gz' -o -
 fi
 
 DATE="$(date +%Y%m%d)"
-BASE_OUT="${PROJECT_DIR}/results/${DATE}_${MODE}_v${VERSION}"
+BASE_OUT="${PROJECT_DIR}/results/${DATE}_${MODE}"
 OUTDIR="${BASE_OUT}"
 RERUN=2
 while [[ -e "${OUTDIR}" ]]; do
-    OUTDIR="${BASE_OUT}_rerun${RERUN}"
+    OUTDIR="${BASE_OUT}_run${RERUN}"
     ((RERUN += 1))
 done
 
@@ -40,6 +40,7 @@ TMPDIR_RUN="$(mktemp -d)"
 trap 'rm -rf -- "${TMPDIR_RUN}"' EXIT
 
 echo "Mode: ${MODE}"
+echo "Pipeline version: ${VERSION}"
 echo "Input: ${INPUT_DIR}"
 echo "Output: ${OUTDIR}"
 echo

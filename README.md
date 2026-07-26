@@ -90,9 +90,10 @@ bash /data/user/MCET03/03_NGS/01_5UTR_Plasmid/pipeline/run_project.sh full
 ```
 
 분석 날짜는 실행한 날짜를 사용하며 결과는
-`results/YYYYMMDD_1pct_v1.3` 또는 `results/YYYYMMDD_full_v1.3`에 저장됩니다.
-같은 날 다시 실행하면 `_rerun2`, `_rerun3`이 자동으로 붙어 기존 결과를
-덮어쓰지 않습니다.
+`results/YYYYMMDD_1pct` 또는 `results/YYYYMMDD_full`에 저장됩니다. 같은 날
+재실행하면 `_run2`, `_run3`가 붙습니다. 사용한 파이프라인 버전은 각 결과의
+`manifest.json`과 실행 로그에 기록되므로 결과 폴더명과 소프트웨어 버전을
+혼동하지 않습니다.
 
 ## 저장소 폴더 구조
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased development fixes
+
+- Recognize `5UTR candidate sequence` and the observed
+  `5UTR cadidate sequence` header automatically, including when an existing
+  configuration still requests `UTR_sequence`.
+- Treat SampleSheet and Top Unknown Barcodes inputs as optional selections;
+  answering `no` no longer aborts project configuration.
+- Separate result run names from software versions. New result folders use
+  `YYYYMMDD_1pct`, `YYYYMMDD_full`, and `_runN` suffixes, while the exact
+  pipeline version remains recorded in `manifest.json` and `run.log`.
+
 ## v1.3 — 2026-07-26
 
 - Fixed Illumina section-style SampleSheet parsing when rows contain surplus

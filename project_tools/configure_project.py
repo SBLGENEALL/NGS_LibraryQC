@@ -37,6 +37,14 @@ def select_one(paths, label):
     raise RuntimeError(f"No {label} was selected.")
 
 
+def select_optional(paths, label):
+    for path in paths:
+        if ask(f"Use this optional {label}?\n  {path}"):
+            return path
+    print(f"No {label} selected; continuing without it.")
+    return None
+
+
 def relative_to_config(path: Path, config_dir: Path) -> str:
     return str(Path("..") / path.relative_to(config_dir.parent))
 
@@ -62,9 +70,12 @@ def reference_columns(path: Path):
             for key in (
                 "utrsequence",
                 "5utrsequence",
+                "5utrcandidatesequence",
+                "5utrcadidatesequence",
                 "targetsequence",
                 "sequence",
                 "seq",
+                "finaloligo",
             )
             if key in lookup
         ),
@@ -93,14 +104,18 @@ def main() -> int:
         if path.is_file()
         and "samplesheet" in re.sub(r"[^a-z0-9]", "", path.name.lower())
     )
-    sample_sheet = select_one(sample_sheets, "SampleSheet") if sample_sheets else None
+    sample_sheet = select_optional(sample_sheets, "SampleSheet") if sample_sheets else None
     top_unknowns = sorted(
         path
         for path in config_dir.iterdir()
         if path.is_file()
         and "topunknownbarcodes" in re.sub(r"[^a-z0-9]", "", path.name.lower())
     )
-    top_unknown = select_one(top_unknowns, "Top Unknown Barcodes file") if top_unknowns else None
+    top_unknown = (
+        select_optional(top_unknowns, "Top Unknown Barcodes file")
+        if top_unknowns
+        else None
+    )
     id_column, sequence_column = reference_columns(reference)
 
     if config_path.exists() and not ask(f"Replace the existing configuration?\n  {config_path}"):
