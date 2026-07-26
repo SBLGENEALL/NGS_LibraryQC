@@ -10,6 +10,8 @@
 - Separate result run names from software versions. New result folders use
   `YYYYMMDD_1pct`, `YYYYMMDD_full`, and `_runN` suffixes, while the exact
   pipeline version remains recorded in `manifest.json` and `run.log`.
+- Add a yes/no PR-development updater that replaces only the pipeline and keeps
+  the previous pipeline as a recoverable timestamped backup.
 
 ## v1.3 — 2026-07-26
 

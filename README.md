@@ -14,6 +14,20 @@ v1.3은 Illumina section형 SampleSheet의 surplus-column 오류를 수정하고
 버전은 두 자리만 사용합니다. 세부 수정은 `v1.3 → v1.4`, 큰 구조 변경은
 `v2.0 → v3.0`으로 진행합니다.
 
+## PR 개발본으로 기존 프로젝트 업데이트
+
+`v1.4-prN-*` 브랜치의 ZIP은 정식 릴리스 전 실제 데이터 검증용입니다.
+ZIP을 `/data/user/MCET03/03_NGS`에 풀고 다음처럼 실행합니다.
+
+```bash
+cd /data/user/MCET03/03_NGS
+bash NGS_LibraryQC-<PR-branch>/update_project.sh
+```
+
+확인 질문에 `yes`라고 답하면 `01_5UTR_Plasmid/pipeline`만 교체됩니다.
+raw data, reference, config, results는 변경하지 않으며 이전 pipeline은
+`/data/user/MCET03/03_NGS_pipeline_backup_<timestamp>`에 보존합니다.
+
 ## GitHub ZIP으로 설치하고 기존 폴더 정리
 
 GitHub에서 `v1.3` 브랜치의 ZIP을 내려받아 사내 워크스테이션의
