@@ -138,6 +138,13 @@ done < <(
         -print0
 )
 
+# Force a clean configuration rebuild while preserving the previous INI.
+if [[ -f "${PROJECT_DIR}/config/libraryqc.ini" ]]; then
+    OLD_CONFIG="$(unique_path "${OLD_ITEMS}/libraryqc.ini")"
+    mv -- "${PROJECT_DIR}/config/libraryqc.ini" "${OLD_CONFIG}"
+    echo "Previous configuration moved to: ${OLD_CONFIG}"
+fi
+
 if [[ -d "${PROJECT_DIR}/scripts" ]]; then
     mv -- "${PROJECT_DIR}/scripts" "${OLD_ITEMS}/scripts"
 fi
