@@ -84,6 +84,29 @@ bash /data/user/MCET03/03_NGS/01_5UTR_Plasmid/scripts/run.sh 1pct --replace
 bash /data/user/MCET03/03_NGS/01_5UTR_Plasmid/scripts/run.sh full
 ```
 
+### 대용량 FASTQ 병렬 분석
+
+`amplicon_qc_parallel.py`는 원본 분석 로직과 결과 형식을 유지하면서 read
+pair batch를 여러 프로세스에서 병렬 처리합니다. 기본 worker 수는 서버에서
+보이는 logical CPU의 절반이며 최대 128입니다. 256-thread 서버에서는
+자동으로 128 worker를 사용합니다.
+
+```bash
+python3 amplicon_qc_parallel.py \
+  --config config/libraryqc.ini \
+  --input-dir raw_data/full \
+  --outdir results/full_parallel
+```
+
+worker 수를 직접 지정할 수도 있습니다.
+
+```bash
+python3 amplicon_qc_parallel.py --workers 128 \
+  --config config/libraryqc.ini \
+  --input-dir raw_data/full \
+  --outdir results/full_parallel
+```
+
 ## 입력
 
 ### FASTQ
