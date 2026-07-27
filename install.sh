@@ -16,6 +16,7 @@ if pgrep -f '[a]mplicon_qc.py' >/dev/null 2>&1; then
 fi
 for required in \
     amplicon_qc.py \
+    amplicon_qc_parallel.py \
     run_project.sh \
     scripts/plot_library_qc.R \
     project_tools/configure_project.py \
@@ -156,6 +157,8 @@ mkdir -p \
     "${NEW_SCRIPTS}/references"
 
 install -m 0644 "${PACKAGE_DIR}/amplicon_qc.py" "${NEW_SCRIPTS}/amplicon_qc.py"
+install -m 0644 "${PACKAGE_DIR}/amplicon_qc_parallel.py" \
+    "${NEW_SCRIPTS}/amplicon_qc_parallel.py"
 install -m 0755 "${PACKAGE_DIR}/run_project.sh" "${NEW_SCRIPTS}/run.sh"
 install -m 0755 "${PACKAGE_DIR}/scripts/plot_library_qc.R" \
     "${NEW_SCRIPTS}/plot_library_qc.R"
