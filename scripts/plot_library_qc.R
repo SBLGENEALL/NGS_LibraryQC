@@ -130,20 +130,37 @@ if (is_one_percent) {
     "Dropout",
     "1-9 reads",
     "10-99 reads",
-    "\u2265100 reads"
+    "Reads >= 100"
+  )
+  coverage_label_math <- c(
+    "plain('Dropout')",
+    "plain('1-9 reads')",
+    "plain('10-99 reads')",
+    "plain(Reads) >= 100"
   )
   coverage_breaks <- c(-Inf, 0, 9, 99, Inf)
   coverage_thresholds <- c(10, 100)
 } else {
   coverage_levels <- c(
     "0 reads",
-    "1 \u2264 Reads < 10\u00b3",
-    "10\u00b3 \u2264 Reads < 10\u2074",
-    "10\u2074 \u2264 Reads < 10\u2075",
-    "Reads \u2265 10\u2075"
+    "1 <= Reads < 10^3",
+    "10^3 <= Reads < 10^4",
+    "10^4 <= Reads < 10^5",
+    "Reads >= 10^5"
+  )
+  coverage_label_math <- c(
+    "plain('0 reads')",
+    "1 <= plain(Reads) * ' < ' * 10^3",
+    "10^3 <= plain(Reads) * ' < ' * 10^4",
+    "10^4 <= plain(Reads) * ' < ' * 10^5",
+    "plain(Reads) >= 10^5"
   )
   coverage_breaks <- c(-Inf, 0, 999, 9999, 99999, Inf)
   coverage_thresholds <- c(1000, 10000, 100000)
+}
+
+coverage_axis_labeler <- function(x) {
+  parse(text = coverage_label_math[match(x, coverage_levels)])
 }
 
 coverage_class <- cut(
@@ -285,19 +302,25 @@ colors <- c(
 )
 
 coverage_palette <- if (is_one_percent) {
-  c(
-    "Dropout" = colors[["dropout"]],
-    "1-9 reads" = colors[["low"]],
-    "10-99 reads" = colors[["medium"]],
-    "\u2265100 reads" = colors[["high"]]
+  setNames(
+    c(
+      colors[["dropout"]],
+      colors[["low"]],
+      colors[["medium"]],
+      colors[["high"]]
+    ),
+    coverage_levels
   )
 } else {
-  c(
-    "0 reads" = colors[["dropout"]],
-    "1 \u2264 Reads < 10\u00b3" = colors[["low"]],
-    "10\u00b3 \u2264 Reads < 10\u2074" = colors[["medium"]],
-    "10\u2074 \u2264 Reads < 10\u2075" = colors[["high"]],
-    "Reads \u2265 10\u2075" = colors[["teal"]]
+  setNames(
+    c(
+      colors[["dropout"]],
+      colors[["low"]],
+      colors[["medium"]],
+      colors[["high"]],
+      colors[["teal"]]
+    ),
+    coverage_levels
   )
 }
 rank_line_colors <- if (is_one_percent) {
@@ -306,9 +329,13 @@ rank_line_colors <- if (is_one_percent) {
   c(colors[["low"]], colors[["medium"]], colors[["dropout"]])
 }
 rank_line_labels <- if (is_one_percent) {
-  paste(format_integer(coverage_thresholds), "reads")
+  c("10~plain(reads)", "100~plain(reads)")
 } else {
-  c("10\u00b3 reads", "10\u2074 reads", "10\u2075 reads")
+  c(
+    "10^3~plain(reads)",
+    "10^4~plain(reads)",
+    "10^5~plain(reads)"
+  )
 }
 
 theme_library_qc <- function() {
@@ -393,6 +420,9 @@ p_coverage <- ggplot2::ggplot(
   ggplot2::scale_fill_manual(
     values = coverage_palette
   ) +
+  ggplot2::scale_y_discrete(
+    labels = coverage_axis_labeler
+  ) +
   ggplot2::scale_x_continuous(
     limits = c(0, coverage_limit),
     labels = format_integer,
@@ -436,6 +466,7 @@ p_rank <- ggplot2::ggplot(
     x = nrow(ranked) * 0.98,
     y = coverage_thresholds + 1,
     label = rank_line_labels,
+    parse = TRUE,
     hjust = 1,
     vjust = -0.45,
     color = rank_line_colors,
