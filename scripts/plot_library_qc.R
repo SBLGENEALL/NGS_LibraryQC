@@ -110,27 +110,45 @@ format_integer <- function(x) {
 }
 
 result_name <- basename(result_dir)
-dataset_context <- if (grepl(
+is_one_percent <- grepl(
   "1pct|1percent|1_percent",
   result_name,
   ignore.case = TRUE
-)) {
+)
+is_full_dataset <- grepl("full", result_name, ignore.case = TRUE)
+
+dataset_context <- if (is_one_percent) {
   "1% paired-end subsample"
-} else if (identical(tolower(result_name), "full")) {
+} else if (is_full_dataset) {
   "Full FASTQ dataset"
 } else {
   paste("Result:", result_name)
 }
 
-coverage_levels <- c(
-  "Dropout",
-  "1-9 reads",
-  "10-99 reads",
-  "\u2265100 reads"
-)
+if (is_one_percent) {
+  coverage_levels <- c(
+    "Dropout",
+    "1-9 reads",
+    "10-99 reads",
+    "\u2265100 reads"
+  )
+  coverage_breaks <- c(-Inf, 0, 9, 99, Inf)
+  coverage_thresholds <- c(10, 100)
+} else {
+  coverage_levels <- c(
+    "Dropout",
+    "1-999 reads",
+    "1,000-9,999 reads",
+    "10,000-99,999 reads",
+    "\u2265100,000 reads"
+  )
+  coverage_breaks <- c(-Inf, 0, 999, 9999, 99999, Inf)
+  coverage_thresholds <- c(1000, 10000, 100000)
+}
+
 coverage_class <- cut(
   counts$total_count,
-  breaks = c(-Inf, 0, 9, 99, Inf),
+  breaks = coverage_breaks,
   labels = coverage_levels,
   right = TRUE
 )
@@ -162,8 +180,11 @@ write.csv(
 )
 
 detected <- sum(counts$total_count > 0)
-at_least_10 <- sum(counts$total_count >= 10)
-at_least_100 <- sum(counts$total_count >= 100)
+coverage_threshold_counts <- vapply(
+  coverage_thresholds,
+  function(threshold) sum(counts$total_count >= threshold),
+  integer(1)
+)
 total_assigned <- sum(counts$total_count)
 median_count <- median(counts$total_count)
 mean_count <- mean(counts$total_count)
@@ -188,40 +209,61 @@ safe_spearman <- function(x, y) {
 length_rho <- safe_spearman(counts$length, counts$total_count)
 gc_rho <- safe_spearman(counts$gc_percent, counts$total_count)
 
-plot_statistics <- data.frame(
-  metric = c(
-    "reference_variants",
-    "detected_variants",
-    "detected_percent",
-    "variants_at_least_10_reads",
-    "variants_at_least_10_reads_percent",
-    "variants_at_least_100_reads",
-    "variants_at_least_100_reads_percent",
-    "total_assigned_reads",
-    "median_reads_per_variant",
-    "mean_reads_per_variant",
-    "count_cv",
-    "length_count_spearman_rho",
-    "gc_count_spearman_rho",
-    "log_scale_pseudocount"
+threshold_statistics <- do.call(
+  rbind,
+  lapply(seq_along(coverage_thresholds), function(index) {
+    threshold <- coverage_thresholds[[index]]
+    threshold_count <- coverage_threshold_counts[[index]]
+    data.frame(
+      metric = c(
+        paste0("variants_at_least_", threshold, "_reads"),
+        paste0("variants_at_least_", threshold, "_reads_percent")
+      ),
+      value = c(
+        threshold_count,
+        100 * threshold_count / nrow(counts)
+      ),
+      stringsAsFactors = FALSE
+    )
+  })
+)
+
+plot_statistics <- rbind(
+  data.frame(
+    metric = c(
+      "reference_variants",
+      "detected_variants",
+      "detected_percent"
+    ),
+    value = c(
+      nrow(counts),
+      detected,
+      100 * detected / nrow(counts)
+    ),
+    stringsAsFactors = FALSE
   ),
-  value = c(
-    nrow(counts),
-    detected,
-    100 * detected / nrow(counts),
-    at_least_10,
-    100 * at_least_10 / nrow(counts),
-    at_least_100,
-    100 * at_least_100 / nrow(counts),
-    total_assigned,
-    median_count,
-    mean_count,
-    count_cv,
-    length_rho,
-    gc_rho,
-    1
-  ),
-  stringsAsFactors = FALSE
+  threshold_statistics,
+  data.frame(
+    metric = c(
+      "total_assigned_reads",
+      "median_reads_per_variant",
+      "mean_reads_per_variant",
+      "count_cv",
+      "length_count_spearman_rho",
+      "gc_count_spearman_rho",
+      "log_scale_pseudocount"
+    ),
+    value = c(
+      total_assigned,
+      median_count,
+      mean_count,
+      count_cv,
+      length_rho,
+      gc_rho,
+      1
+    ),
+    stringsAsFactors = FALSE
+  )
 )
 write.csv(
   plot_statistics,
@@ -241,6 +283,29 @@ colors <- c(
   muted = "#667580",
   grid = "#DDE5EA"
 )
+
+coverage_palette <- if (is_one_percent) {
+  c(
+    "Dropout" = colors[["dropout"]],
+    "1-9 reads" = colors[["low"]],
+    "10-99 reads" = colors[["medium"]],
+    "\u2265100 reads" = colors[["high"]]
+  )
+} else {
+  c(
+    "Dropout" = colors[["dropout"]],
+    "1-999 reads" = colors[["low"]],
+    "1,000-9,999 reads" = colors[["medium"]],
+    "10,000-99,999 reads" = colors[["high"]],
+    "\u2265100,000 reads" = colors[["teal"]]
+  )
+}
+rank_line_colors <- if (is_one_percent) {
+  c(colors[["low"]], colors[["dropout"]])
+} else {
+  c(colors[["low"]], colors[["medium"]], colors[["dropout"]])
+}
+rank_line_labels <- paste(format_integer(coverage_thresholds), "reads")
 
 theme_library_qc <- function() {
   ggplot2::theme_minimal(base_size = 12, base_family = "sans") +
@@ -322,12 +387,7 @@ p_coverage <- ggplot2::ggplot(
     size = 4.0
   ) +
   ggplot2::scale_fill_manual(
-    values = c(
-      "Dropout" = colors[["dropout"]],
-      "1-9 reads" = colors[["low"]],
-      "10-99 reads" = colors[["medium"]],
-      "\u2265100 reads" = colors[["high"]]
-    )
+    values = coverage_palette
   ) +
   ggplot2::scale_x_continuous(
     limits = c(0, coverage_limit),
@@ -337,11 +397,12 @@ p_coverage <- ggplot2::ggplot(
   ggplot2::labs(
     title = "5'UTR library coverage",
     subtitle = sprintf(
-      "%s | %s reference variants | %s (%.1f%%) have at least 10 assigned reads",
+      "%s | %s reference variants | %s (%.1f%%) have at least %s assigned reads",
       dataset_context,
       format_integer(nrow(counts)),
-      format_integer(at_least_10),
-      100 * at_least_10 / nrow(counts)
+      format_integer(coverage_threshold_counts[[1]]),
+      100 * coverage_threshold_counts[[1]] / nrow(counts),
+      format_integer(coverage_thresholds[[1]])
     ),
     x = "Number of reference variants",
     y = NULL
@@ -361,19 +422,19 @@ p_rank <- ggplot2::ggplot(
     linewidth = 0.85
   ) +
   ggplot2::geom_hline(
-    yintercept = c(10 + 1, 100 + 1),
-    color = c(colors[["low"]], colors[["dropout"]]),
+    yintercept = coverage_thresholds + 1,
+    color = rank_line_colors,
     linetype = "dashed",
     linewidth = 0.55
   ) +
   ggplot2::annotate(
     "text",
     x = nrow(ranked) * 0.98,
-    y = c(10 + 1, 100 + 1),
-    label = c("10 reads", "100 reads"),
+    y = coverage_thresholds + 1,
+    label = rank_line_labels,
     hjust = 1,
     vjust = -0.45,
-    color = c(colors[["low"]], colors[["dropout"]]),
+    color = rank_line_colors,
     size = 3.3
   ) +
   ggplot2::scale_y_log10(
