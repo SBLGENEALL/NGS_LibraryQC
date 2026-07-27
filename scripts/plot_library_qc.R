@@ -10,8 +10,7 @@ required_packages <- c(
   "scales",
   "patchwork",
   "viridisLite",
-  "ragg",
-  "ggrepel"
+  "ragg"
 )
 missing_packages <- required_packages[
   !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
@@ -394,9 +393,9 @@ p_rank <- ggplot2::ggplot(
       format_integer(median_count),
       format_integer(total_assigned)
     ),
-    caption = "Zero-count variants are plotted at 1 using total_count + 1; tick labels show the original read count.",
+    caption = "Tick labels show actual read counts; spacing is logarithmic. Zero-count variants are plotted using total_count + 1.",
     x = "Variant rank",
-    y = "Assigned reads (log10 scale)"
+    y = "Assigned reads per variant"
   ) +
   theme_library_qc()
 
@@ -440,13 +439,6 @@ p_distribution <- ggplot2::ggplot(
   theme_library_qc()
 
 counts$plot_count <- counts$total_count + 1
-top_label_count <- min(3, nrow(counts))
-top_variants <- counts[
-  order(counts$total_count, decreasing = TRUE)[seq_len(top_label_count)],
-  ,
-  drop = FALSE
-]
-
 relationship_plot <- function(
   x_column,
   x_label,
@@ -478,22 +470,6 @@ relationship_plot <- function(
       alpha = 0.12,
       linewidth = 0.7
     ) +
-    ggrepel::geom_text_repel(
-      data = top_variants,
-      ggplot2::aes(
-        x = .data[[x_column]],
-        y = plot_count,
-        label = variant_ids
-      ),
-      min.segment.length = 0,
-      box.padding = 0.35,
-      point.padding = 0.2,
-      max.overlaps = Inf,
-      seed = 20260727,
-      color = colors[["ink"]],
-      size = 3.0,
-      show.legend = FALSE
-    ) +
     ggplot2::scale_y_log10(
       breaks = count_break_positions,
       labels = count_break_labels,
@@ -503,7 +479,7 @@ relationship_plot <- function(
       title = panel_title,
       subtitle = rho_label,
       x = x_label,
-      y = "Assigned reads (log10 scale)"
+      y = "Assigned reads per variant"
     ) +
     theme_library_qc() +
     ggplot2::theme(
@@ -533,11 +509,8 @@ p_relationship <- (
 ) +
   patchwork::plot_annotation(
     title = "Sequence properties versus abundance",
-    subtitle = paste(
-      dataset_context,
-      "| Top three abundant variants are labelled"
-    ),
-    caption = "Zero-count variants are retained using total_count + 1 on the log10 y-axis.",
+    subtitle = dataset_context,
+    caption = "Tick labels show actual read counts; spacing is logarithmic. Zero-count variants are retained using total_count + 1.",
     theme = ggplot2::theme(
       plot.title = ggplot2::element_text(
         color = colors[["ink"]],
