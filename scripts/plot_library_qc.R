@@ -5,6 +5,25 @@ if (length(args) != 2) {
   stop("Usage: Rscript plot_library_qc.R RESULT_DIR OUTPUT_DIR")
 }
 
+required_packages <- c(
+  "ggplot2",
+  "scales",
+  "patchwork",
+  "viridisLite",
+  "ragg",
+  "ggrepel"
+)
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+if (length(missing_packages) > 0) {
+  stop(
+    "Missing R package(s): ",
+    paste(missing_packages, collapse = ", "),
+    ". Install them in the plotting environment before running this script."
+  )
+}
+
 result_dir <- normalizePath(args[[1]], mustWork = TRUE)
 output_dir <- args[[2]]
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
@@ -38,15 +57,15 @@ if (file.exists(csv_count_file)) {
     stringsAsFactors = FALSE
   )
 } else {
-  stop(paste(
-    "Count table not found. Expected:",
+  stop(
+    "Count table not found. Expected: ",
     csv_count_file,
-    "or",
+    " or ",
     tsv_count_file
-  ))
+  )
 }
 
-required <- c(
+required_columns <- c(
   "variant_ids",
   "length",
   "gc_percent",
@@ -54,9 +73,12 @@ required <- c(
   "near_count",
   "total_count"
 )
-missing <- setdiff(required, colnames(counts))
-if (length(missing) > 0) {
-  stop(paste("Missing required column(s):", paste(missing, collapse = ", ")))
+missing_columns <- setdiff(required_columns, colnames(counts))
+if (length(missing_columns) > 0) {
+  stop(
+    "Missing required column(s): ",
+    paste(missing_columns, collapse = ", ")
+  )
 }
 if (nrow(counts) == 0) {
   stop("The count table contains no variants.")
@@ -72,7 +94,7 @@ numeric_columns <- c(
 for (column in numeric_columns) {
   counts[[column]] <- suppressWarnings(as.numeric(counts[[column]]))
   if (any(!is.finite(counts[[column]]))) {
-    stop(paste("Non-numeric or missing value in column:", column))
+    stop("Non-numeric or missing value in column: ", column)
   }
 }
 if (any(counts$total_count < 0)) {
@@ -80,10 +102,32 @@ if (any(counts$total_count < 0)) {
 }
 
 format_integer <- function(x) {
-  format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
+  scales::label_number(
+    accuracy = 1,
+    big.mark = ",",
+    scientific = FALSE
+  )(x)
 }
 
-coverage_levels <- c("Dropout", "1-9 reads", "10-99 reads", "\u2265100 reads")
+result_name <- basename(result_dir)
+dataset_context <- if (grepl(
+  "1pct|1percent|1_percent",
+  result_name,
+  ignore.case = TRUE
+)) {
+  "1% paired-end subsample"
+} else if (identical(tolower(result_name), "full")) {
+  "Full FASTQ dataset"
+} else {
+  paste("Result:", result_name)
+}
+
+coverage_levels <- c(
+  "Dropout",
+  "1-9 reads",
+  "10-99 reads",
+  "\u2265100 reads"
+)
 coverage_class <- cut(
   counts$total_count,
   breaks = c(-Inf, 0, 9, 99, Inf),
@@ -97,8 +141,21 @@ coverage_summary <- data.frame(
   percent = 100 * as.integer(coverage_table) / nrow(counts),
   stringsAsFactors = FALSE
 )
+coverage_summary$coverage_class <- factor(
+  coverage_summary$coverage_class,
+  levels = rev(coverage_levels)
+)
+coverage_summary$label <- sprintf(
+  "%s  (%.1f%%)",
+  format_integer(coverage_summary$variants),
+  coverage_summary$percent
+)
+
 write.csv(
-  coverage_summary,
+  transform(
+    coverage_summary,
+    coverage_class = as.character(coverage_class)
+  )[, c("coverage_class", "variants", "percent")],
   file.path(output_dir, "coverage_class_summary.csv"),
   quote = FALSE,
   row.names = FALSE
@@ -110,14 +167,22 @@ at_least_100 <- sum(counts$total_count >= 100)
 total_assigned <- sum(counts$total_count)
 median_count <- median(counts$total_count)
 mean_count <- mean(counts$total_count)
-count_cv <- if (mean_count > 0) sd(counts$total_count) / mean_count else NA_real_
+count_cv <- if (mean_count > 0) {
+  stats::sd(counts$total_count) / mean_count
+} else {
+  NA_real_
+}
 
 safe_spearman <- function(x, y) {
   keep <- is.finite(x) & is.finite(y)
-  if (sum(keep) < 3 || length(unique(x[keep])) < 2 || length(unique(y[keep])) < 2) {
+  if (
+    sum(keep) < 3 ||
+      length(unique(x[keep])) < 2 ||
+      length(unique(y[keep])) < 2
+  ) {
     return(NA_real_)
   }
-  suppressWarnings(cor(x[keep], y[keep], method = "spearman"))
+  suppressWarnings(stats::cor(x[keep], y[keep], method = "spearman"))
 }
 
 length_rho <- safe_spearman(counts$length, counts$total_count)
@@ -137,7 +202,8 @@ plot_statistics <- data.frame(
     "mean_reads_per_variant",
     "count_cv",
     "length_count_spearman_rho",
-    "gc_count_spearman_rho"
+    "gc_count_spearman_rho",
+    "log_scale_pseudocount"
   ),
   value = c(
     nrow(counts),
@@ -152,7 +218,8 @@ plot_statistics <- data.frame(
     mean_count,
     count_cv,
     length_rho,
-    gc_rho
+    gc_rho,
+    1
   ),
   stringsAsFactors = FALSE
 )
@@ -163,252 +230,365 @@ write.csv(
   row.names = FALSE
 )
 
-palette <- c(
-  navy = "#173F5F",
-  blue = "#20639B",
-  teal = "#3CAEA3",
-  gold = "#F6D55C",
-  orange = "#ED8B3A",
-  red = "#C94C4C",
-  purple = "#7C5AA6",
-  ink = "#263238",
-  grid = "#DCE3E8",
-  pale = "#F4F7F9"
+colors <- c(
+  dropout = "#D55E00",
+  low = "#E69F00",
+  medium = "#56B4E9",
+  high = "#0072B2",
+  teal = "#009E73",
+  purple = "#7B61A8",
+  ink = "#24323D",
+  muted = "#667580",
+  grid = "#DDE5EA"
 )
 
-set_plot_theme <- function(margins = c(5.0, 5.2, 4.8, 1.8)) {
-  par(
-    mar = margins,
-    mgp = c(3.0, 0.8, 0),
-    tcl = -0.25,
-    las = 1,
-    bty = "n",
-    family = "sans",
-    fg = palette[["ink"]],
-    col.axis = palette[["ink"]],
-    col.lab = palette[["ink"]],
-    col.main = palette[["ink"]]
-  )
+theme_library_qc <- function() {
+  ggplot2::theme_minimal(base_size = 12, base_family = "sans") +
+    ggplot2::theme(
+      plot.title = ggplot2::element_text(
+        color = colors[["ink"]],
+        face = "bold",
+        size = 16,
+        margin = ggplot2::margin(b = 5)
+      ),
+      plot.subtitle = ggplot2::element_text(
+        color = colors[["muted"]],
+        size = 10.5,
+        lineheight = 1.15,
+        margin = ggplot2::margin(b = 12)
+      ),
+      plot.caption = ggplot2::element_text(
+        color = colors[["muted"]],
+        size = 9,
+        hjust = 0,
+        margin = ggplot2::margin(t = 10)
+      ),
+      axis.title = ggplot2::element_text(
+        color = colors[["ink"]],
+        face = "bold",
+        size = 11
+      ),
+      axis.text = ggplot2::element_text(
+        color = colors[["ink"]],
+        size = 10
+      ),
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.grid.major.y = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_line(
+        color = colors[["grid"]],
+        linewidth = 0.35
+      ),
+      legend.position = "none",
+      plot.margin = ggplot2::margin(18, 30, 16, 18)
+    )
 }
 
-add_title <- function(main_title, subtitle = "") {
-  title(main = main_title, adj = 0, font.main = 2, cex.main = 1.15, line = 2.2)
-  if (nzchar(subtitle)) {
-    mtext(subtitle, side = 3, adj = 0, line = 0.75, cex = 0.82, col = "#5F6B73")
+count_axis_values <- function(max_count) {
+  max_count <- max(0, max_count)
+  if (max_count == 0) {
+    return(c(0, 1))
   }
+  max_power <- max(1, ceiling(log10(max_count)))
+  values <- sort(unique(c(0, 1, 10^(seq_len(max_power)))))
+  values[values <= max_count | values %in% c(0, 1)]
 }
 
-plot_coverage <- function() {
-  set_plot_theme(c(4.8, 7.2, 5.2, 2.2))
-  values <- rev(coverage_summary$variants)
-  labels <- rev(coverage_summary$coverage_class)
-  percentages <- rev(coverage_summary$percent)
-  bar_colors <- rev(c(
-    palette[["red"]],
-    palette[["orange"]],
-    palette[["gold"]],
-    palette[["blue"]]
-  ))
-  x_max <- max(1, max(values))
-  label_room <- max(1, x_max * 0.30)
-  positions <- barplot(
-    values,
-    names.arg = labels,
-    horiz = TRUE,
-    col = bar_colors,
-    border = NA,
-    xlim = c(0, x_max + label_room),
-    xlab = "Number of reference variants",
-    axes = FALSE,
-    cex.names = 0.95
+count_breaks <- count_axis_values(max(counts$total_count))
+count_break_positions <- count_breaks + 1
+count_break_labels <- format_integer(count_breaks)
+
+coverage_max <- max(coverage_summary$variants)
+coverage_padding <- max(1, coverage_max * 0.025)
+coverage_summary$label_x <- coverage_summary$variants + coverage_padding
+coverage_limit <- max(
+  1,
+  max(coverage_summary$label_x) + max(12, coverage_max * 0.28)
+)
+
+p_coverage <- ggplot2::ggplot(
+  coverage_summary,
+  ggplot2::aes(
+    x = variants,
+    y = coverage_class,
+    fill = coverage_class
   )
-  abline(v = pretty(c(0, x_max)), col = palette[["grid"]], lwd = 0.8)
-  axis(1, at = pretty(c(0, x_max)), labels = format_integer(pretty(c(0, x_max))))
-  text(
-    x = values + max(1, x_max * 0.02),
-    y = positions,
-    labels = sprintf("%s  (%.1f%%)", format_integer(values), percentages),
-    adj = 0,
-    cex = 0.92,
-    font = 2,
-    xpd = FALSE,
-    col = palette[["ink"]]
-  )
-  add_title(
-    "5'UTR library coverage",
-    sprintf(
-      "%s variants; %s (%.1f%%) have at least 10 assigned reads",
+) +
+  ggplot2::geom_col(width = 0.66, show.legend = FALSE) +
+  ggplot2::geom_text(
+    ggplot2::aes(x = label_x, label = label),
+    hjust = 0,
+    color = colors[["ink"]],
+    fontface = "bold",
+    size = 4.0
+  ) +
+  ggplot2::scale_fill_manual(
+    values = c(
+      "Dropout" = colors[["dropout"]],
+      "1-9 reads" = colors[["low"]],
+      "10-99 reads" = colors[["medium"]],
+      "\u2265100 reads" = colors[["high"]]
+    )
+  ) +
+  ggplot2::scale_x_continuous(
+    limits = c(0, coverage_limit),
+    labels = scales::label_number(big.mark = ","),
+    expand = ggplot2::expansion(mult = c(0, 0))
+  ) +
+  ggplot2::labs(
+    title = "5'UTR library coverage",
+    subtitle = sprintf(
+      "%s | %s reference variants | %s (%.1f%%) have at least 10 assigned reads",
+      dataset_context,
       format_integer(nrow(counts)),
       format_integer(at_least_10),
       100 * at_least_10 / nrow(counts)
-    )
-  )
-}
+    ),
+    x = "Number of reference variants",
+    y = NULL
+  ) +
+  theme_library_qc()
 
-plot_rank_abundance <- function() {
-  set_plot_theme()
-  ranked <- sort(counts$total_count, decreasing = TRUE)
-  x <- seq_along(ranked)
-  y <- ranked + 1
-  plot(
-    x,
-    y,
-    type = "l",
-    log = "y",
-    lwd = 2.2,
-    col = palette[["blue"]],
-    xlab = "Variant rank",
-    ylab = "Assigned reads + 1 (log scale)",
-    axes = FALSE
-  )
-  x_ticks <- pretty(range(x))
-  y_ticks <- 10^(0:ceiling(log10(max(y))))
-  abline(h = y_ticks, col = palette[["grid"]], lwd = 0.8)
-  axis(1, at = x_ticks, labels = format_integer(x_ticks))
-  axis(2, at = y_ticks, labels = format_integer(y_ticks))
-  abline(h = c(11, 101), lty = 3, lwd = 1.0, col = c(palette[["orange"]], palette[["red"]]))
-  legend(
-    "topright",
-    legend = c("10 reads", "100 reads"),
-    lty = 3,
-    lwd = 1.2,
-    col = c(palette[["orange"]], palette[["red"]]),
-    bty = "n",
-    cex = 0.82
-  )
-  add_title(
-    "Rank-abundance curve",
-    sprintf(
-      "Median %s reads/variant; total %s assigned reads",
+ranked <- counts[order(counts$total_count, decreasing = TRUE), , drop = FALSE]
+ranked$rank <- seq_len(nrow(ranked))
+ranked$plot_count <- ranked$total_count + 1
+
+p_rank <- ggplot2::ggplot(
+  ranked,
+  ggplot2::aes(x = rank, y = plot_count)
+) +
+  ggplot2::geom_line(
+    color = colors[["high"]],
+    linewidth = 0.85
+  ) +
+  ggplot2::geom_hline(
+    yintercept = c(10 + 1, 100 + 1),
+    color = c(colors[["low"]], colors[["dropout"]]),
+    linetype = "dashed",
+    linewidth = 0.55
+  ) +
+  ggplot2::annotate(
+    "text",
+    x = nrow(ranked) * 0.98,
+    y = c(10 + 1, 100 + 1),
+    label = c("10 reads", "100 reads"),
+    hjust = 1,
+    vjust = -0.45,
+    color = c(colors[["low"]], colors[["dropout"]]),
+    size = 3.3
+  ) +
+  ggplot2::scale_y_log10(
+    breaks = count_break_positions,
+    labels = count_break_labels,
+    expand = ggplot2::expansion(mult = c(0.03, 0.12))
+  ) +
+  ggplot2::scale_x_continuous(
+    labels = scales::label_number(big.mark = ","),
+    expand = ggplot2::expansion(mult = c(0, 0.01))
+  ) +
+  ggplot2::labs(
+    title = "Rank-abundance curve",
+    subtitle = sprintf(
+      "%s | Median %s reads/variant | Total %s assigned reads",
+      dataset_context,
       format_integer(median_count),
       format_integer(total_assigned)
-    )
-  )
-}
+    ),
+    caption = "Zero-count variants are plotted at 1 using total_count + 1; tick labels show the original read count.",
+    x = "Variant rank",
+    y = "Assigned reads (log10 scale)"
+  ) +
+  theme_library_qc()
 
-plot_distribution <- function() {
-  set_plot_theme()
-  transformed <- log10(counts$total_count + 1)
-  breaks <- unique(pretty(range(transformed), n = 35))
-  if (length(breaks) < 2) {
-    breaks <- c(transformed[[1]] - 0.5, transformed[[1]] + 0.5)
-  }
-  histogram <- hist(transformed, breaks = breaks, plot = FALSE)
-  plot(
-    histogram,
-    col = palette[["teal"]],
-    border = "white",
-    freq = TRUE,
-    main = "",
-    xlab = expression(log[10] * "(assigned reads + 1)"),
-    ylab = "Number of variants",
-    axes = FALSE
-  )
-  abline(h = pretty(c(0, max(histogram$counts))), col = palette[["grid"]], lwd = 0.8)
-  axis(1)
-  axis(2, at = pretty(c(0, max(histogram$counts))), labels = format_integer(pretty(c(0, max(histogram$counts)))))
-  add_title(
-    "Variant read-count distribution",
-    sprintf(
-      "Detected %s of %s variants (%.1f%%)",
+counts$log10_count_plus_one <- log10(counts$total_count + 1)
+distribution_break_values <- count_axis_values(max(counts$total_count))
+
+p_distribution <- ggplot2::ggplot(
+  counts,
+  ggplot2::aes(x = log10_count_plus_one)
+) +
+  ggplot2::geom_histogram(
+    bins = 35,
+    boundary = 0,
+    closed = "left",
+    fill = colors[["teal"]],
+    color = "white",
+    linewidth = 0.25
+  ) +
+  ggplot2::scale_x_continuous(
+    breaks = log10(distribution_break_values + 1),
+    labels = format_integer(distribution_break_values),
+    expand = ggplot2::expansion(mult = c(0.01, 0.03))
+  ) +
+  ggplot2::scale_y_continuous(
+    labels = scales::label_number(big.mark = ","),
+    expand = ggplot2::expansion(mult = c(0, 0.08))
+  ) +
+  ggplot2::labs(
+    title = "Variant read-count distribution",
+    subtitle = sprintf(
+      "%s | Detected %s of %s variants (%.1f%%)",
+      dataset_context,
       format_integer(detected),
       format_integer(nrow(counts)),
       100 * detected / nrow(counts)
+    ),
+    caption = "The x-axis uses log10(total_count + 1), so dropout variants remain visible at 0 reads.",
+    x = "Assigned reads",
+    y = "Number of variants"
+  ) +
+  theme_library_qc()
+
+counts$plot_count <- counts$total_count + 1
+top_label_count <- min(3, nrow(counts))
+top_variants <- counts[
+  order(counts$total_count, decreasing = TRUE)[seq_len(top_label_count)],
+  ,
+  drop = FALSE
+]
+
+relationship_plot <- function(
+  x_column,
+  x_label,
+  point_color,
+  rho,
+  panel_title
+) {
+  rho_label <- if (is.finite(rho)) {
+    sprintf("Spearman rho = %.3f", rho)
+  } else {
+    "Spearman rho = NA"
+  }
+
+  ggplot2::ggplot(
+    counts,
+    ggplot2::aes(x = .data[[x_column]], y = plot_count)
+  ) +
+    ggplot2::geom_point(
+      color = point_color,
+      alpha = 0.46,
+      size = 1.55
+    ) +
+    ggplot2::geom_smooth(
+      method = "loess",
+      formula = y ~ x,
+      se = TRUE,
+      color = colors[["ink"]],
+      fill = point_color,
+      alpha = 0.12,
+      linewidth = 0.7
+    ) +
+    ggrepel::geom_text_repel(
+      data = top_variants,
+      ggplot2::aes(
+        x = .data[[x_column]],
+        y = plot_count,
+        label = variant_ids
+      ),
+      min.segment.length = 0,
+      box.padding = 0.35,
+      point.padding = 0.2,
+      max.overlaps = Inf,
+      seed = 20260727,
+      color = colors[["ink"]],
+      size = 3.0,
+      show.legend = FALSE
+    ) +
+    ggplot2::scale_y_log10(
+      breaks = count_break_positions,
+      labels = count_break_labels,
+      expand = ggplot2::expansion(mult = c(0.03, 0.16))
+    ) +
+    ggplot2::labs(
+      title = panel_title,
+      subtitle = rho_label,
+      x = x_label,
+      y = "Assigned reads (log10 scale)"
+    ) +
+    theme_library_qc() +
+    ggplot2::theme(
+      plot.title = ggplot2::element_text(size = 14),
+      plot.margin = ggplot2::margin(16, 18, 14, 16)
     )
-  )
 }
 
-plot_relationship <- function(x, x_label, color, rho, panel_title) {
-  set_plot_theme()
-  y <- log10(counts$total_count + 1)
-  plot(
-    x,
-    y,
-    pch = 16,
-    cex = 0.72,
-    col = grDevices::adjustcolor(color, alpha.f = 0.50),
-    xlab = x_label,
-    ylab = expression(log[10] * "(assigned reads + 1)"),
-    axes = FALSE
-  )
-  abline(
-    h = pretty(range(y)),
-    v = pretty(range(x)),
-    col = palette[["grid"]],
-    lwd = 0.7
-  )
-  axis(1)
-  axis(2)
-  rho_label <- if (is.finite(rho)) sprintf("Spearman rho = %.3f", rho) else "Spearman rho = NA"
-  add_title(panel_title, rho_label)
-}
-
-write_png <- function(filename, width, height, plot_function) {
-  png(
-    file.path(output_dir, filename),
-    width = width,
-    height = height,
-    res = 180,
-    bg = "white"
-  )
-  on.exit(dev.off())
-  plot_function()
-}
-
-write_png("01_coverage_classes.png", 1800, 1100, plot_coverage)
-write_png("02_rank_abundance.png", 1800, 1100, plot_rank_abundance)
-write_png("03_count_distribution.png", 1800, 1100, plot_distribution)
-
-png(
-  file.path(output_dir, "04_length_gc_vs_count.png"),
-  width = 2400,
-  height = 1100,
-  res = 180,
-  bg = "white"
-)
-par(mfrow = c(1, 2))
-plot_relationship(
-  counts$length,
+p_length <- relationship_plot(
+  "length",
   "5'UTR length (nt)",
-  palette[["blue"]],
+  colors[["high"]],
   length_rho,
   "Length vs abundance"
 )
-plot_relationship(
-  counts$gc_percent,
+p_gc <- relationship_plot(
+  "gc_percent",
   "GC content (%)",
-  palette[["purple"]],
+  colors[["purple"]],
   gc_rho,
   "GC content vs abundance"
 )
-dev.off()
 
-pdf(
+p_relationship <- (
+  p_length + p_gc +
+    patchwork::plot_layout(ncol = 2)
+) +
+  patchwork::plot_annotation(
+    title = "Sequence properties versus abundance",
+    subtitle = paste(
+      dataset_context,
+      "| Top three abundant variants are labelled"
+    ),
+    caption = "Zero-count variants are retained using total_count + 1 on the log10 y-axis.",
+    theme = ggplot2::theme(
+      plot.title = ggplot2::element_text(
+        color = colors[["ink"]],
+        face = "bold",
+        size = 16
+      ),
+      plot.subtitle = ggplot2::element_text(
+        color = colors[["muted"]],
+        size = 10.5
+      ),
+      plot.caption = ggplot2::element_text(
+        color = colors[["muted"]],
+        size = 9,
+        hjust = 0
+      ),
+      plot.margin = ggplot2::margin(14, 20, 12, 16)
+    )
+  )
+
+save_png <- function(filename, plot, width, height) {
+  ragg::agg_png(
+    filename = file.path(output_dir, filename),
+    width = width,
+    height = height,
+    units = "in",
+    res = 320,
+    background = "white"
+  )
+  on.exit(grDevices::dev.off(), add = TRUE)
+  print(plot)
+}
+
+save_png("01_coverage_classes.png", p_coverage, 10.5, 6.2)
+save_png("02_rank_abundance.png", p_rank, 10.5, 6.2)
+save_png("03_count_distribution.png", p_distribution, 10.5, 6.2)
+save_png("04_length_gc_vs_count.png", p_relationship, 13.0, 6.3)
+
+grDevices::pdf(
   file.path(output_dir, "library_qc_figures.pdf"),
-  width = 10,
+  width = 10.5,
   height = 6.5,
   onefile = TRUE,
   family = "Helvetica",
   paper = "special"
 )
-plot_coverage()
-plot_rank_abundance()
-plot_distribution()
-par(mfrow = c(1, 2))
-plot_relationship(
-  counts$length,
-  "5'UTR length (nt)",
-  palette[["blue"]],
-  length_rho,
-  "Length vs abundance"
-)
-plot_relationship(
-  counts$gc_percent,
-  "GC content (%)",
-  palette[["purple"]],
-  gc_rho,
-  "GC content vs abundance"
-)
-dev.off()
+print(p_coverage)
+print(p_rank)
+print(p_distribution)
+print(p_relationship)
+grDevices::dev.off()
 
-message("R figures written to: ", normalizePath(output_dir, mustWork = TRUE))
+message(
+  "R figures written to: ",
+  normalizePath(output_dir, mustWork = TRUE)
+)
