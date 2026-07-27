@@ -136,11 +136,11 @@ if (is_one_percent) {
   coverage_thresholds <- c(10, 100)
 } else {
   coverage_levels <- c(
-    "Dropout",
-    "1-999 reads",
-    "1,000-9,999 reads",
-    "10,000-99,999 reads",
-    "\u2265100,000 reads"
+    "0 reads",
+    "1 \u2264 Reads < 10\u00b3",
+    "10\u00b3 \u2264 Reads < 10\u2074",
+    "10\u2074 \u2264 Reads < 10\u2075",
+    "Reads \u2265 10\u2075"
   )
   coverage_breaks <- c(-Inf, 0, 999, 9999, 99999, Inf)
   coverage_thresholds <- c(1000, 10000, 100000)
@@ -293,11 +293,11 @@ coverage_palette <- if (is_one_percent) {
   )
 } else {
   c(
-    "Dropout" = colors[["dropout"]],
-    "1-999 reads" = colors[["low"]],
-    "1,000-9,999 reads" = colors[["medium"]],
-    "10,000-99,999 reads" = colors[["high"]],
-    "\u2265100,000 reads" = colors[["teal"]]
+    "0 reads" = colors[["dropout"]],
+    "1 \u2264 Reads < 10\u00b3" = colors[["low"]],
+    "10\u00b3 \u2264 Reads < 10\u2074" = colors[["medium"]],
+    "10\u2074 \u2264 Reads < 10\u2075" = colors[["high"]],
+    "Reads \u2265 10\u2075" = colors[["teal"]]
   )
 }
 rank_line_colors <- if (is_one_percent) {
@@ -305,7 +305,11 @@ rank_line_colors <- if (is_one_percent) {
 } else {
   c(colors[["low"]], colors[["medium"]], colors[["dropout"]])
 }
-rank_line_labels <- paste(format_integer(coverage_thresholds), "reads")
+rank_line_labels <- if (is_one_percent) {
+  paste(format_integer(coverage_thresholds), "reads")
+} else {
+  c("10\u00b3 reads", "10\u2074 reads", "10\u2075 reads")
+}
 
 theme_library_qc <- function() {
   ggplot2::theme_minimal(base_size = 12, base_family = "sans") +
