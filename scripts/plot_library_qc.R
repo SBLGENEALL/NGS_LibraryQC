@@ -102,11 +102,12 @@ if (any(counts$total_count < 0)) {
 }
 
 format_integer <- function(x) {
-  scales::label_number(
-    accuracy = 1,
-    big.mark = ",",
-    scientific = FALSE
-  )(x)
+  trimws(formatC(
+    as.numeric(x),
+    format = "f",
+    digits = 0,
+    big.mark = ","
+  ))
 }
 
 result_name <- basename(result_dir)
@@ -331,7 +332,7 @@ p_coverage <- ggplot2::ggplot(
   ) +
   ggplot2::scale_x_continuous(
     limits = c(0, coverage_limit),
-    labels = scales::label_number(big.mark = ","),
+    labels = format_integer,
     expand = ggplot2::expansion(mult = c(0, 0))
   ) +
   ggplot2::labs(
@@ -382,7 +383,7 @@ p_rank <- ggplot2::ggplot(
     expand = ggplot2::expansion(mult = c(0.03, 0.12))
   ) +
   ggplot2::scale_x_continuous(
-    labels = scales::label_number(big.mark = ","),
+    labels = format_integer,
     expand = ggplot2::expansion(mult = c(0, 0.01))
   ) +
   ggplot2::labs(
@@ -420,7 +421,7 @@ p_distribution <- ggplot2::ggplot(
     expand = ggplot2::expansion(mult = c(0.01, 0.03))
   ) +
   ggplot2::scale_y_continuous(
-    labels = scales::label_number(big.mark = ","),
+    labels = format_integer,
     expand = ggplot2::expansion(mult = c(0, 0.08))
   ) +
   ggplot2::labs(
