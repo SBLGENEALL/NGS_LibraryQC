@@ -22,7 +22,9 @@ import amplicon_qc as core
 
 
 WORKER_STATE: Dict[str, object] = {}
-DEFAULT_WORKERS = 32
+# Use half of the visible logical CPUs, capped at 128.  This gives the user's
+# 256-thread server 128 workers without oversubscribing smaller machines.
+DEFAULT_WORKERS = max(1, min(128, multiprocessing.cpu_count() // 2))
 DEFAULT_BATCH_SIZE = 5_000
 
 
