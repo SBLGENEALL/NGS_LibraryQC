@@ -339,34 +339,34 @@ rank_line_labels <- if (is_one_percent) {
 }
 
 theme_library_qc <- function() {
-  ggplot2::theme_minimal(base_size = 12, base_family = "sans") +
+  ggplot2::theme_minimal(base_size = 15, base_family = "sans") +
     ggplot2::theme(
       plot.title = ggplot2::element_text(
         color = colors[["ink"]],
         face = "bold",
-        size = 16,
-        margin = ggplot2::margin(b = 5)
+        size = 21,
+        margin = ggplot2::margin(b = 6)
       ),
       plot.subtitle = ggplot2::element_text(
         color = colors[["muted"]],
-        size = 10.5,
+        size = 14,
         lineheight = 1.15,
         margin = ggplot2::margin(b = 12)
       ),
       plot.caption = ggplot2::element_text(
         color = colors[["muted"]],
-        size = 9,
+        size = 12,
         hjust = 0,
         margin = ggplot2::margin(t = 10)
       ),
       axis.title = ggplot2::element_text(
         color = colors[["ink"]],
         face = "bold",
-        size = 11
+        size = 15
       ),
       axis.text = ggplot2::element_text(
         color = colors[["ink"]],
-        size = 10
+        size = 13
       ),
       panel.grid.minor = ggplot2::element_blank(),
       panel.grid.major.y = ggplot2::element_blank(),
@@ -415,7 +415,7 @@ p_coverage <- ggplot2::ggplot(
     hjust = 0,
     color = colors[["ink"]],
     fontface = "bold",
-    size = 4.0
+    size = 5.2
   ) +
   ggplot2::scale_fill_manual(
     values = coverage_palette
@@ -470,7 +470,7 @@ p_rank <- ggplot2::ggplot(
     hjust = 1,
     vjust = -0.45,
     color = rank_line_colors,
-    size = 3.3
+    size = 4.5
   ) +
   ggplot2::scale_y_log10(
     breaks = count_break_positions,
@@ -579,7 +579,7 @@ relationship_plot <- function(
     ) +
     theme_library_qc() +
     ggplot2::theme(
-      plot.title = ggplot2::element_text(size = 14),
+      plot.title = ggplot2::element_text(size = 18),
       plot.margin = ggplot2::margin(16, 18, 14, 16)
     )
 }
@@ -611,15 +611,15 @@ p_relationship <- (
       plot.title = ggplot2::element_text(
         color = colors[["ink"]],
         face = "bold",
-        size = 16
+        size = 21
       ),
       plot.subtitle = ggplot2::element_text(
         color = colors[["muted"]],
-        size = 10.5
+        size = 14
       ),
       plot.caption = ggplot2::element_text(
         color = colors[["muted"]],
-        size = 9,
+        size = 12,
         hjust = 0
       ),
       plot.margin = ggplot2::margin(14, 20, 12, 16)
