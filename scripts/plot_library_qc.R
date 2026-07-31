@@ -27,15 +27,17 @@ result_dir <- normalizePath(args[[1]], mustWork = TRUE)
 output_dir <- args[[2]]
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
+# This run contains one 5'UTR library plus PhiX. The pipeline has already
+# summed assigned and Undetermined variant counts element-wise in this table.
 csv_count_file <- file.path(
   result_dir,
   "combined",
-  "ALL_ASSIGNED_variant_counts.csv"
+  "ALL_WITH_UNDETERMINED_variant_counts.csv"
 )
 tsv_count_file <- file.path(
   result_dir,
   "combined",
-  "ALL_ASSIGNED_variant_counts.tsv"
+  "ALL_WITH_UNDETERMINED_variant_counts.tsv"
 )
 if (file.exists(csv_count_file)) {
   count_file <- csv_count_file
@@ -117,13 +119,18 @@ is_one_percent <- grepl(
 )
 is_full_dataset <- grepl("full", result_name, ignore.case = TRUE)
 
-dataset_context <- if (is_one_percent) {
+dataset_size_context <- if (is_one_percent) {
   "1% paired-end subsample"
 } else if (is_full_dataset) {
   "Full FASTQ dataset"
 } else {
   paste("Result:", result_name)
 }
+dataset_context <- paste(
+  dataset_size_context,
+  "5UTR_plasmid + Undetermined",
+  sep = " | "
+)
 
 if (is_one_percent) {
   coverage_levels <- c(
@@ -658,6 +665,10 @@ print(p_distribution)
 print(p_relationship)
 grDevices::dev.off()
 
+message(
+  "Count source: ",
+  normalizePath(count_file, mustWork = TRUE)
+)
 message(
   "R figures written to: ",
   normalizePath(output_dir, mustWork = TRUE)
