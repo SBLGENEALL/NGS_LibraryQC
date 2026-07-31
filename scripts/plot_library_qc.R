@@ -111,6 +111,10 @@ format_integer <- function(x) {
   ))
 }
 
+wrap_plot_text <- function(text, width = 92) {
+  paste(strwrap(text, width = width), collapse = "\n")
+}
+
 result_name <- basename(result_dir)
 is_one_percent <- grepl(
   "1pct|1percent|1_percent",
@@ -382,7 +386,9 @@ theme_library_qc <- function() {
         linewidth = 0.35
       ),
       legend.position = "none",
-      plot.margin = ggplot2::margin(18, 30, 16, 18)
+      plot.title.position = "plot",
+      plot.caption.position = "plot",
+      plot.margin = ggplot2::margin(22, 40, 20, 28)
     )
 }
 
@@ -437,14 +443,14 @@ p_coverage <- ggplot2::ggplot(
   ) +
   ggplot2::labs(
     title = "5'UTR library coverage",
-    subtitle = sprintf(
+    subtitle = wrap_plot_text(sprintf(
       "%s | %s reference variants | %s (%.1f%%) have at least %s assigned reads",
       dataset_context,
       format_integer(nrow(counts)),
       format_integer(coverage_threshold_counts[[1]]),
       100 * coverage_threshold_counts[[1]] / nrow(counts),
       format_integer(coverage_thresholds[[1]])
-    ),
+    )),
     x = "Number of reference variants",
     y = NULL
   ) +
@@ -490,13 +496,16 @@ p_rank <- ggplot2::ggplot(
   ) +
   ggplot2::labs(
     title = "Rank-abundance curve",
-    subtitle = sprintf(
+    subtitle = wrap_plot_text(sprintf(
       "%s | Median %s reads/variant | Total %s assigned reads",
       dataset_context,
       format_integer(median_count),
       format_integer(total_assigned)
+    )),
+    caption = wrap_plot_text(
+      "Tick labels show actual read counts; spacing is logarithmic. Zero-count variants are plotted using total_count + 1.",
+      width = 108
     ),
-    caption = "Tick labels show actual read counts; spacing is logarithmic. Zero-count variants are plotted using total_count + 1.",
     x = "Variant rank",
     y = "Assigned reads per variant"
   ) +
@@ -528,14 +537,17 @@ p_distribution <- ggplot2::ggplot(
   ) +
   ggplot2::labs(
     title = "Variant read-count distribution",
-    subtitle = sprintf(
+    subtitle = wrap_plot_text(sprintf(
       "%s | Detected %s of %s variants (%.1f%%)",
       dataset_context,
       format_integer(detected),
       format_integer(nrow(counts)),
       100 * detected / nrow(counts)
+    )),
+    caption = wrap_plot_text(
+      "The x-axis uses log10(total_count + 1), so dropout variants remain visible at 0 reads.",
+      width = 108
     ),
-    caption = "The x-axis uses log10(total_count + 1), so dropout variants remain visible at 0 reads.",
     x = "Assigned reads",
     y = "Number of variants"
   ) +
@@ -612,8 +624,11 @@ p_relationship <- (
 ) +
   patchwork::plot_annotation(
     title = "Sequence properties versus abundance",
-    subtitle = dataset_context,
-    caption = "Tick labels show actual read counts; spacing is logarithmic. Zero-count variants are retained using total_count + 1.",
+    subtitle = wrap_plot_text(dataset_context, width = 110),
+    caption = wrap_plot_text(
+      "Tick labels show actual read counts; spacing is logarithmic. Zero-count variants are retained using total_count + 1.",
+      width = 120
+    ),
     theme = ggplot2::theme(
       plot.title = ggplot2::element_text(
         color = colors[["ink"]],
@@ -629,7 +644,7 @@ p_relationship <- (
         size = 12,
         hjust = 0
       ),
-      plot.margin = ggplot2::margin(14, 20, 12, 16)
+      plot.margin = ggplot2::margin(18, 34, 16, 26)
     )
   )
 
@@ -646,15 +661,15 @@ save_png <- function(filename, plot, width, height) {
   print(plot)
 }
 
-save_png("01_coverage_classes.png", p_coverage, 10.5, 6.2)
-save_png("02_rank_abundance.png", p_rank, 10.5, 6.2)
-save_png("03_count_distribution.png", p_distribution, 10.5, 6.2)
-save_png("04_length_gc_vs_count.png", p_relationship, 13.0, 6.3)
+save_png("01_coverage_classes.png", p_coverage, 11.8, 6.6)
+save_png("02_rank_abundance.png", p_rank, 11.8, 6.6)
+save_png("03_count_distribution.png", p_distribution, 11.8, 6.6)
+save_png("04_length_gc_vs_count.png", p_relationship, 14.5, 7.0)
 
 grDevices::pdf(
   file.path(output_dir, "library_qc_figures.pdf"),
-  width = 10.5,
-  height = 6.5,
+  width = 13.333,
+  height = 7.5,
   onefile = TRUE,
   family = "Helvetica",
   paper = "special"
