@@ -130,11 +130,7 @@ dataset_size_context <- if (is_one_percent) {
 } else {
   paste("Result:", result_name)
 }
-dataset_context <- paste(
-  dataset_size_context,
-  "5UTR_plasmid + Undetermined",
-  sep = " | "
-)
+dataset_context <- dataset_size_context
 
 if (is_one_percent) {
   coverage_levels <- c(
